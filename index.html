@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Result Analysis Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://unpkg.com/docx@8.2.2/build/index.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        
+        @media print {
+            body > * { display: none !important; }
+            #printWrapper { display: block !important; position: absolute; top: 0; left: 0; width: 100%; background: white; }
+            #activeReport { display: block !important; padding: 10mm !important; width: 100% !important; border: none !important; box-shadow: none !important; }
+            canvas { max-width: 100% !important; height: auto !important; }
+            table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            th, td { border: 1px solid black !important; }
+            .page-break { page-break-before: always; }
+            @page { size: A4; margin: 0; }
+        }
+
+        #printWrapper { display: none; }
+        .report-shadow { box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); }
+        .chart-container { position: relative; width: 100%; min-height: 350px; display: flex; justify-content: center; align-items: center; }
+        
+        .mode-btn-active { background-color: #4f46e5; color: white; border-color: #4f46e5; }
+        .mode-btn-inactive { background-color: white; color: #64748b; border-color: #e2e8f0; }
+    </style>
+</head>
+<body class="text-slate-900 p-0 md:p-8">
+    <div id="printWrapper"></div>
+    <div class="max-w-7xl mx-auto main-ui no-print">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-indigo-900 mb-2 flex items-center justify-center gap-3">
+                <i data-lucide="layout-dashboard" class="text-indigo-600"></i> Academic Result Analyzer
+            </h1>
+            <p class="text-slate-500 text-lg">Generate cumulative or individual analysis reports with visual charts.</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
+            <div class="lg:col-span-4 space-y-6">
+                <!-- Analysis Mode Selection -->
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i data-lucide="layers" class="w-5 h-5 text-indigo-600"></i> Analysis Mode
+                    </h2>
+                    <div class="flex gap-2">
+                        <button id="modeProgram" class="flex-1 py-2 px-4 rounded-xl border font-medium transition-all mode-btn-active">Programwise</button>
+                        <button id="modeSemester" class="flex-1 py-2 px-4 rounded-xl border font-medium transition-all mode-btn-inactive">Semesterwise</button>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i data-lucide="upload" class="w-5 h-5 text-indigo-600"></i> 1. Upload Data
+                    </h2>
+                    <div id="dropZone" class="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-all group relative">
+                        <i data-lucide="file-spreadsheet" class="w-12 h-12 mx-auto mb-3 text-slate-300 group-hover:text-indigo-500"></i>
+                        <p id="dropZoneText" class="text-sm font-medium text-slate-700">Drag & Drop Tabulation Sheet</p>
+                        <input type="file" id="fileInput" class="absolute inset-0 opacity-0 cursor-pointer" accept=".xlsx, .xls, .csv" multiple>
+                    </div>
+                    <div id="statusMessage" class="mt-4 hidden text-sm font-medium p-3 rounded-lg"></div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i data-lucide="settings" class="w-5 h-5 text-indigo-600"></i> 2. Metadata
+                    </h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Institution</label>
+                            <input type="text" id="schoolInp" value="Dr. APJ ABDUL KALAM SCHOOL OF ENGINEERING" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Semester Name</label>
+                            <input type="text" id="semInp" value="3rd SEMESTER B.Tech. Jan-2025" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Program</label>
+                                <input type="text" id="progInp" placeholder="Detecting..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Batch</label>
+                                <input type="text" id="secInp" placeholder="Detecting..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Date</label>
+                            <input type="text" id="dateInp" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="actionButtons" class="hidden space-y-3">
+                    <button id="downloadWordBtn" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 hover:-translate-y-1 transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="file-text" class="w-5 h-5"></i> Download Word (.docx)
+                    </button>
+                    <button id="downloadPdfBtn" class="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-100 hover:bg-emerald-700 hover:-translate-y-1 transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="file-down" class="w-5 h-5"></i> Download PDF
+                    </button>
+                    <button id="printBtn" class="w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow-lg shadow-slate-100 hover:bg-slate-900 hover:-translate-y-1 transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="printer" class="w-5 h-5"></i> Print Preview
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:col-span-8">
+                <div id="reportContainer" class="bg-white rounded-2xl border border-slate-200 report-shadow min-h-[800px] overflow-hidden">
+                    <div id="emptyState" class="h-full flex flex-col items-center justify-center text-slate-400 p-20 text-center">
+                        <div class="bg-slate-50 p-6 rounded-full mb-4">
+                            <i data-lucide="file-search" class="w-16 h-16 opacity-20"></i>
+                        </div>
+                        <p class="text-xl font-medium text-slate-600">No Data Loaded</p>
+                        <p class="text-sm mt-2 max-w-xs">Upload tabulation files to generate analysis. Switch modes above for single or cumulative reports.</p>
+                    </div>
+
+                    <div id="activeReport" class="hidden p-[10mm] text-black bg-white">
+                        <!-- Content injected by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        Chart.register(ChartDataLabels);
+
+        let analysisMode = 'program';
+        let processedData = null;
+        let activeChart = null;
+
+        const fileInput = document.getElementById('fileInput');
+        const modeProgram = document.getElementById('modeProgram');
+        const modeSemester = document.getElementById('modeSemester');
+        const dropZoneText = document.getElementById('dropZoneText');
+        const actionButtons = document.getElementById('actionButtons');
+        const statusMessage = document.getElementById('statusMessage');
+        const activeReport = document.getElementById('activeReport');
+        const emptyState = document.getElementById('emptyState');
+        const printWrapper = document.getElementById('printWrapper');
+
+        document.getElementById('dateInp').value = new Date().toLocaleDateString('en-GB');
+
+        modeProgram.onclick = () => setMode('program');
+        modeSemester.onclick = () => setMode('semester');
+
+        function setMode(mode) {
+            analysisMode = mode;
+            modeProgram.className = `flex-1 py-2 px-4 rounded-xl border font-medium transition-all ${mode === 'program' ? 'mode-btn-active' : 'mode-btn-inactive'}`;
+            modeSemester.className = `flex-1 py-2 px-4 rounded-xl border font-medium transition-all ${mode === 'semester' ? 'mode-btn-active' : 'mode-btn-inactive'}`;
+            dropZoneText.innerText = mode === 'program' ? "Drag & Drop Tabulation Sheet" : "Drag & Drop Multiple Sheets (Ctrl+Select)";
+            resetApp();
+        }
+
+        function resetApp() {
+            processedData = null;
+            emptyState.classList.remove('hidden');
+            activeReport.classList.add('hidden');
+            actionButtons.classList.add('hidden');
+            statusMessage.classList.add('hidden');
+            fileInput.value = '';
+        }
+
+        fileInput.onchange = async (e) => {
+            const files = Array.from(e.target.files);
+            if (!files.length) return;
+
+            statusMessage.classList.remove('hidden', 'bg-emerald-50', 'text-emerald-700', 'bg-red-50', 'text-red-700');
+            statusMessage.classList.add('bg-indigo-50', 'text-indigo-700');
+            statusMessage.textContent = `Processing ${files.length} file(s)...`;
+
+            try {
+                const results = [];
+                for (let file of files) {
+                    const data = await file.arrayBuffer();
+                    const workbook = XLSX.read(new Uint8Array(data), { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                    results.push({ rows });
+                }
+                
+                processedData = (analysisMode === 'program') ? processSingle(results[0].rows) : processCumulative(results);
+                renderReport();
+            } catch (err) {
+                statusMessage.textContent = 'Error: ' + err.message;
+                statusMessage.classList.replace('bg-indigo-50', 'bg-red-50');
+            }
+        };
+
+        function scanSheet(rows) {
+            let codeRowIdx = -1, prog = "", batch = "";
+            const courseRegex = /[0-9]+[A-Z]+[0-9]+/;
+            const usnPattern = /^[0-9]{2}[A-Z]{3,5}[0-9]+$/;
+
+            for (let i = 0; i < Math.min(rows.length, 20); i++) {
+                const row = rows[i] || [];
+                const rowText = row.join(' ');
+                if (rowText.includes('Academic Batch')) batch = row.filter(c => c && c.toString().length > 1).join(' ').trim();
+                if (rowText.includes('Program') || rowText.includes('B Tech')) prog = row.filter(c => c && c.toString().length > 3).join(' ').trim();
+                if (codeRowIdx === -1 && row.some(c => c && typeof c === 'string' && courseRegex.test(c))) codeRowIdx = i;
+            }
+
+            const subjects = [];
+            const codesRow = rows[codeRowIdx] || [];
+            const facultyRow = rows[codeRowIdx - 1] || [];
+            const nameRow = rows[codeRowIdx + 1] || [];
+            const seen = new Set();
+            
+            codesRow.forEach((cell, idx) => {
+                if (cell && typeof cell === 'string' && courseRegex.test(cell.trim())) {
+                    const code = cell.trim();
+                    if (!seen.has(code)) {
+                        subjects.push({ code, faculty: facultyRow[idx] || 'Class Teacher', name: nameRow[idx] || 'Subject', resCol: idx + 6 });
+                        seen.add(code);
+                    }
+                }
+            });
+
+            const validStudents = rows.slice(codeRowIdx + 1).filter(row => 
+                row.slice(0, 5).some(c => c && typeof c === 'string' && usnPattern.test(c.replace(/\s/g, '').toUpperCase()))
+            );
+
+            let statusIdx = (rows[codeRowIdx] || []).findIndex(c => c && c.toString().toUpperCase() === 'STATUS');
+            if (statusIdx === -1 && validStudents.length) {
+                const sample = validStudents[0];
+                for(let i = sample.length-1; i >= 0; i--) {
+                    if(['PASS', 'FAIL', 'P', 'F'].includes(sample[i]?.toString().toUpperCase())) { statusIdx = i; break; }
+                }
+            }
+
+            const stats = subjects.map(s => {
+                let app = 0, p = 0, f = 0;
+                validStudents.forEach(row => {
+                    const res = row[s.resCol]?.toString().toUpperCase();
+                    if (['PASS', 'FAIL', 'P', 'F'].includes(res)) {
+                        app++;
+                        if (['PASS', 'P'].includes(res)) p++; else f++;
+                    }
+                });
+                return { ...s, app, p, f, pct: app > 0 ? (p/app*100).toFixed(2) : "0.00" };
+            });
+
+            const ovPass = validStudents.filter(r => ['PASS', 'P', 'PASSED'].includes(r[statusIdx]?.toString().toUpperCase())).length;
+            return { meta: { prog, batch }, stats, overall: { app: validStudents.length, p: ovPass, f: validStudents.length - ovPass, pct: validStudents.length > 0 ? (ovPass/validStudents.length*100).toFixed(2) : "0.00" } };
+        }
+
+        function processSingle(rows) {
+            const data = scanSheet(rows);
+            return { mode: 'program', school: document.getElementById('schoolInp').value, title: document.getElementById('semInp').value, date: document.getElementById('dateInp').value, program: data.meta.prog || document.getElementById('progInp').value, batch: data.meta.batch || document.getElementById('secInp').value, subjects: data.stats, overall: data.overall };
+        }
+
+        function processCumulative(results) {
+            const programs = [];
+            const courseGroups = {};
+            results.forEach(res => {
+                const s = scanSheet(res.rows);
+                programs.push({ name: s.meta.prog || "Program", ...s.overall });
+                s.stats.forEach(item => {
+                    const key = item.name.toUpperCase().trim();
+                    if (!courseGroups[key]) courseGroups[key] = { name: item.name, faculty: item.faculty, app: 0, p: 0, f: 0 };
+                    courseGroups[key].app += item.app; courseGroups[key].p += item.p; courseGroups[key].f += item.f;
+                });
+            });
+            const totalApp = programs.reduce((a, b) => a + b.app, 0);
+            const totalPass = programs.reduce((a, b) => a + b.p, 0);
+            return { mode: 'semester', school: document.getElementById('schoolInp').value, title: document.getElementById('semInp').value, date: document.getElementById('dateInp').value, programs, subjects: Object.values(courseGroups).map(c => ({...c, pct: c.app > 0 ? (c.p/c.app*100).toFixed(2) : "0.00"})), overall: { app: totalApp, p: totalPass, f: totalApp - totalPass, pct: totalApp > 0 ? (totalPass/totalApp*100).toFixed(2) : "0.00" } };
+        }
+
+        function renderReport() {
+            if (!processedData) return;
+            emptyState.classList.add('hidden');
+            activeReport.classList.remove('hidden');
+            actionButtons.classList.remove('hidden');
+            statusMessage.textContent = 'Report Generated Successfully';
+            statusMessage.classList.replace('bg-indigo-50', 'bg-emerald-50');
+
+            const header = `
+                <div class="text-center mb-8 border-b-2 border-black pb-4 mt-0">
+                    <h2 class="text-xl font-bold uppercase mb-1 mt-0">${processedData.school}</h2>
+                    <div class="flex justify-between items-end text-[12px] font-bold mt-4">
+                        <div class="text-left"><p>RESULT ANALYSIS FOR THE ${processedData.title}</p><p class="underline">${processedData.mode.toUpperCase()} RESULTS</p></div>
+                        <p>Date: ${processedData.date}</p>
+                    </div>
+                </div>`;
+
+            if (processedData.mode === 'program') {
+                activeReport.innerHTML = header + renderProgramReport(processedData);
+                renderBarChart('mainChart', processedData.subjects.map(s => s.code), processedData.subjects.map(s => s.pct));
+            } else {
+                activeReport.innerHTML = header + renderSemesterReport(processedData);
+                renderPieChart('mainChart', processedData.programs.map(p => p.name), processedData.programs.map(p => p.app));
+            }
+        }
+
+        function renderProgramReport(d) {
+            return `
+                <div class="flex justify-between mb-4 text-[12px] font-bold">
+                    <p>Program: ${d.program}</p><p>Batch: ${d.batch}</p>
+                </div>
+                <table class="w-full border-collapse border border-black text-[10px] mb-6">
+                    <tr class="bg-gray-100"><th>Code</th><th>Subject</th><th>Faculty</th><th>Appeared</th><th>Pass</th><th>Fail</th><th>% Pass</th></tr>
+                    ${d.subjects.map(s => `<tr><td class="border border-black p-1">${s.code}</td><td class="border border-black p-1">${s.name}</td><td class="border border-black p-1">${s.faculty}</td><td class="border border-black p-1 text-center">${s.app}</td><td class="border border-black p-1 text-center">${s.p}</td><td class="border border-black p-1 text-center">${s.f}</td><td class="border border-black p-1 text-center font-bold">${s.pct}%</td></tr>`).join('')}
+                </table>
+                <div class="chart-container mb-6"><canvas id="mainChart"></canvas></div>
+                <h4 class="text-[12px] font-bold mb-2 underline">OVERALL SUMMARY:</h4>
+                <table class="w-[50%] border border-black text-[12px] text-center font-bold">
+                    <tr class="bg-gray-100"><td>Appeared</td><td>Pass</td><td>Fail</td><td>% Pass</td></tr>
+                    <tr><td>${d.overall.app}</td><td>${d.overall.p}</td><td>${d.overall.f}</td><td>${d.overall.pct}%</td></tr>
+                </table>
+                ${renderSigs()}`;
+        }
+
+        function renderSemesterReport(d) {
+            return `
+                <h4 class="text-[12px] font-bold mb-2 underline">PROGRAM WISE RESULTS (CUMULATIVE):</h4>
+                <table class="w-full border-collapse border border-black text-[11px] mb-6">
+                    <tr class="bg-gray-100"><th>Program Name</th><th>Appeared</th><th>Pass</th><th>Fail</th><th>% Pass</th></tr>
+                    ${d.programs.map(p => `<tr><td class="border border-black p-2">${p.name}</td><td class="border border-black p-2 text-center">${p.app}</td><td class="border border-black p-2 text-center">${p.p}</td><td class="border border-black p-2 text-center">${p.f}</td><td class="border border-black p-2 text-center font-bold">${p.pct}%</td></tr>`).join('')}
+                    <tr class="bg-slate-50 font-bold"><td class="border border-black p-2">OVERALL</td><td class="border border-black p-2 text-center">${d.overall.app}</td><td class="border border-black p-2 text-center">${d.overall.p}</td><td class="border border-black p-2 text-center">${d.overall.f}</td><td class="border border-black p-2 text-center">${d.overall.pct}%</td></tr>
+                </table>
+                <div class="chart-container mb-12"><div class="w-[350px] h-[350px]"><canvas id="mainChart"></canvas></div></div>
+                <div class="page-break"></div>
+                <h4 class="text-[12px] font-bold mt-8 mb-2 underline">COURSE WISE RESULTS (OVERALL):</h4>
+                <table class="w-full border-collapse border border-black text-[10px]">
+                    <tr class="bg-gray-100"><th>Subject Name</th><th>Appeared</th><th>Pass</th><th>Fail</th><th>% Pass</th></tr>
+                    ${d.subjects.map(s => `<tr><td class="border border-black p-1">${s.name}</td><td class="border border-black p-1 text-center">${s.app}</td><td class="border border-black p-1 text-center">${s.p}</td><td class="border border-black p-1 text-center">${s.f}</td><td class="border border-black p-1 text-center font-bold">${s.pct}%</td></tr>`).join('')}
+                </table>
+                ${renderSigs()}`;
+        }
+
+        function renderSigs() {
+            return `
+                <div class="mt-20 grid grid-cols-3 gap-12 text-center text-[12px] font-bold">
+                    <div><div class="h-10 border-b border-black mb-2"></div><p>Faculty Sign</p></div>
+                    <div><div class="h-10 border-b border-black mb-2"></div><p>Class Teacher</p></div>
+                    <div><div class="h-10 border-b border-black mb-2"></div><p>HOD / Principal</p></div>
+                </div>`;
+        }
+
+        function renderBarChart(id, labels, data) {
+            const ctx = document.getElementById(id).getContext('2d');
+            activeChart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels, datasets: [{ data: data.map(v => parseFloat(v)), backgroundColor: 'rgba(79, 70, 229, 0.75)', borderColor: 'rgb(79, 70, 229)', borderWidth: 1, barThickness: 25 }] },
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, datalabels: { anchor: 'end', align: 'right', formatter: v => v + '%', font: { weight: 'bold' }, color: '#4338ca' } }, scales: { x: { beginAtZero: true, max: 100 } } }
+            });
+        }
+
+        function renderPieChart(id, labels, data) {
+            const ctx = document.getElementById(id).getContext('2d');
+            const colors = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+            activeChart = new Chart(ctx, {
+                type: 'pie',
+                data: { labels, datasets: [{ data, backgroundColor: colors.slice(0, labels.length) }] },
+                options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { position: 'bottom' }, datalabels: { color: '#fff', font: { weight: 'bold' }, formatter: (v, ctx) => { let sum = ctx.dataset.data.reduce((a, b) => a + b, 0); return (v/sum*100).toFixed(1) + "%"; } } } }
+            });
+        }
+
+        document.getElementById('downloadPdfBtn').onclick = () => {
+            const opt = { 
+                margin: [10, 10, 10, 10], 
+                filename: 'Analysis_Report.pdf', 
+                image: { type: 'jpeg', quality: 1 }, 
+                html2canvas: { scale: 3, useCORS: true, scrollY: 0, y: 0 }, 
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
+            };
+            html2pdf().set(opt).from(activeReport).save();
+        };
+
+        document.getElementById('printBtn').onclick = () => {
+            printWrapper.innerHTML = '';
+            const clone = activeReport.cloneNode(true);
+            clone.classList.remove('hidden');
+            printWrapper.appendChild(clone);
+            const canvases = clone.querySelectorAll('canvas');
+            canvases.forEach((c, idx) => {
+                const source = activeReport.querySelectorAll('canvas')[idx];
+                const ctx = c.getContext('2d');
+                ctx.drawImage(source, 0, 0);
+            });
+            setTimeout(() => window.print(), 500);
+        };
+
+        document.getElementById('downloadWordBtn').onclick = async () => {
+            const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, AlignmentType } = docx;
+            const chartImg = activeChart.toBase64Image();
+            const doc = new Document({
+                sections: [{
+                    children: [
+                        new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: processedData.school, bold: true, size: 28 })] }),
+                        new Paragraph({ children: [new TextRun({ text: `RESULT ANALYSIS: ${processedData.title}`, bold: true, size: 22 })] }),
+                        new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [
+                            new TableRow({ children: ["Subject/Program", "Appeared", "Pass", "%"].map(h => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })] })) }),
+                            ...(processedData.subjects || processedData.programs).map(s => new TableRow({ children: [s.name || s.code, s.app.toString(), s.p.toString(), `${s.pct}%`].map(v => new TableCell({ children: [new Paragraph({ text: v })] })) }))
+                        ]}),
+                        new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ data: Uint8Array.from(atob(chartImg.split(',')[1]), c => c.charCodeAt(0)), transformation: { width: 450, height: 300 } })] })
+                    ]
+                }]
+            });
+            Packer.toBlob(doc).then(blob => saveAs(blob, `Analysis_Report.docx`));
+        };
+
+        const dropZone = document.getElementById('dropZone');
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => dropZone.addEventListener(e, (ev) => { ev.preventDefault(); ev.stopPropagation(); if (e === 'dragover') dropZone.classList.add('border-indigo-400', 'bg-indigo-50'); else dropZone.classList.remove('border-indigo-400', 'bg-indigo-50'); }, false));
+        dropZone.addEventListener('drop', (e) => { const files = e.dataTransfer.files; if (files.length) { fileInput.files = files; fileInput.dispatchEvent(new Event('change')); } });
+    </script>
+</body>
+</html>
