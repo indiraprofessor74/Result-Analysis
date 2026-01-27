@@ -21,9 +21,9 @@
         .chart-container { position: relative; width: 100%; margin-top: 1rem; display: flex; justify-content: center; align-items: center; background: #fff; padding: 10px; border: 1px solid #e2e8f0; }
 
         /* Designed Tables */
-        .academic-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 2px solid #1e3a8a; table-layout: fixed; }
+        .academic-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 2px solid #1e3a8a; table-layout: auto; }
         .academic-table th { background-color: #1e3a8a !important; color: white !important; text-transform: uppercase; font-size: 13px; padding: 10px 5px; border: 1px solid #000; }
-        .academic-table td { border: 1px solid #000; padding: 8px; font-size: 14px; color: black; vertical-align: middle; word-wrap: break-word; }
+        .academic-table td { border: 1px solid #000; padding: 8px; font-size: 14px; color: black; vertical-align: middle; word-wrap: break-word; white-space: normal; word-break: break-word;}
         
         /* Stripes */
         .academic-table tbody tr:nth-child(even) { background-color: #f1f7ff !important; }
@@ -46,7 +46,7 @@
         .university-header-text { 
             margin: 0; 
             padding: 8mm 0 4mm 0;
-            font-size: 40px; 
+            font-size: 26px; 
             font-weight: bold; 
             color: #1e3a8a; 
             text-align: center; 
@@ -56,11 +56,11 @@
         }
 
         .result-analysis-title {
-            font-size: 54px;
+            font-size: 32px;
             font-weight: bold;
             text-decoration: underline;
             text-align: center;
-            margin: 15px 0;
+            margin: 5px 0;
             letter-spacing: 2px;
             color: #000;
             text-transform: uppercase;
@@ -311,10 +311,11 @@
         }
 
         function scrapeFacultyNames() {
-            let allFilled = true;
-            document.querySelectorAll('.faculty-input-cell').forEach(cell => { if (!cell.innerText.trim()) allFilled = false; });
-            genFacultySubjectBtn.disabled = !allFilled;
-
+            let hasAtLeastOne = false;
+document.querySelectorAll('.faculty-input-cell').forEach(cell => {
+    if (cell.innerText.trim()) hasAtLeastOne = true;
+});
+genFacultySubjectBtn.disabled = !hasAtLeastOne;
             const courseMap = {}; 
             processedData.reports.forEach((report, rIdx) => {
                 const tableRows = document.querySelectorAll(`#subj-table-${rIdx} tbody tr`);
@@ -341,6 +342,12 @@
                 faculties: Object.values(c.faculties).map(f => ({ ...f, pct: f.app > 0 ? (f.p/f.app*100).toFixed(2) : "0.00" }))
             }));
         }
+function canvasToImageRun(canvas, w = 550, h = 300) {
+  return new ImageRun({
+    data: Uint8Array.from(atob(canvas.toDataURL().split(',')[1]), c => c.charCodeAt(0)),
+    transformation: { width: w, height: h }
+  });
+}
 
         function renderReport() {
             if (!processedData) return;
@@ -448,6 +455,13 @@
         }
 
         deptSelect.oninput = syncHeaders; progNameInp.oninput = syncHeaders; batchInp.oninput = syncHeaders; semInp.oninput = syncHeaders;
+// ALWAYS rebuild comparison data before generating report
+scrapeFacultyNames();
+
+if (!processedData.comparisonList || processedData.comparisonList.length === 0) {
+    alert("Please enter faculty names for at least one subject.");
+    return;
+}
 
 genFacultySubjectBtn.onclick = function() {
     const section = document.getElementById('faculty-analytics-section');
@@ -551,7 +565,7 @@ genFacultySubjectBtn.onclick = function() {
                 margin: 0, 
                 filename: 'GCU_Analysis.pdf', 
                 image: { type: 'jpeg', quality: 1 }, 
-                html2canvas: { scale: 3, useCORS: true, scrollY: 0, scrollX: 0 }, 
+                html2canvas: { scale: 2, windowWidth: 1200, useCORS: true, scrollY: 0, scrollX: 0 }, 
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } 
             };
             html2pdf().set(opt).from(element).save();
@@ -560,6 +574,23 @@ genFacultySubjectBtn.onclick = function() {
         document.getElementById('downloadWordBtn').onclick = async () => {
             const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, AlignmentType, BorderStyle } = window.docx;
             const b = { style: BorderStyle.SINGLE, size: 1 }; const cs = { borders: { top: b, bottom: b, left: b, right: b } };
+           
+const co = document.getElementById('bar-course-overall');
+if (co) {
+  children.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [canvasToImageRun(co, 550, 350)]
+    })
+  );
+}
+new Table({
+  width: { size: 100, type: WidthType.PERCENTAGE },
+  columnWidths: [4000, 3000, 2000],
+  rows: tableRows
+});
+
+
             const children = [
                 new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "GARDEN CITY UNIVERSITY", bold: true, size: 48, color: "1e3a8a" })] }),
                 new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: (deptSelect.value || "ACADEMIC") + " DEPARTMENT", bold: true, size: 36 })] }),
@@ -567,6 +598,16 @@ genFacultySubjectBtn.onclick = function() {
                 new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `Date: ${new Date().toLocaleDateString('en-GB')}`, size: 24 })] }),
                 new Paragraph({ text: "" })
             ];
+            const pie = document.getElementById('cumulativePie');
+if (pie) {
+  children.push(
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [canvasToImageRun(pie, 400, 400)]
+    })
+  );
+}
+
             processedData.reports.forEach((report, idx) => {
                 children.push(new Paragraph({ children: [new TextRun({ text: `PROGRAM: ${progNameInp.value || report.prog} | BATCH: ${batchInp.value}`, bold: true, size: 24 })] }));
                 const tableRows = [new TableRow({ children: ["Course", "Faculty", "Pass %"].map(h => new TableCell({ ...cs, children: [new Paragraph({ children: [new TextRun({ text: h, bold: true })] })] })) }), ...report.subjects.map(s => new TableRow({ children: [s.name, s.faculty, `${s.pct}%`].map(v => new TableCell({ ...cs, children: [new Paragraph({ text: v })] })) }))];
